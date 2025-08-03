@@ -436,6 +436,29 @@
             border-radius: 4px;
             color: #c33;
         }
+        
+        /* Completion Modal Styles */
+        .completion-details {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 2px solid var(--color-accent);
+        }
+        
+        .completion-details p {
+            font-size: 12px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        #score-details {
+            color: var(--color-accent);
+            font-weight: bold;
+        }
+        
+        #next-level-info {
+            color: var(--color-light);
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -557,6 +580,24 @@
                     <p><span class="pixel-arrow">></span> New Game: Start over from Level 1</p>
                     <p><span class="pixel-arrow">></span> Reset Level: Retry current level</p>
                     <p><span class="pixel-arrow">></span> Help: Show these instructions</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Level Completion Modal -->
+    <div id="completion-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="completion-title">Level Complete!</h2>
+            </div>
+            <div class="modal-body">
+                <div class="help-section">
+                    <p id="completion-message">Congratulations! You completed the level!</p>
+                    <div id="completion-details" class="completion-details">
+                        <p id="score-details">Score details will appear here</p>
+                        <p id="next-level-info">Proceeding to next level...</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -769,10 +810,7 @@
                     // Perfect completion!
                     gameState.gameCompleted = true;
                     gameState.globalScore += gameState.currentLevelScore;
-                    showGameResult(true, `Perfect! You completed level ${gameState.level} in exactly ${steps} steps! (+${gameState.currentLevelScore} points)`);
-                    setTimeout(() => {
-                        nextLevel();
-                    }, 3000);
+                    showCompletionModal(gameState.level, steps, gameState.currentLevelScore);
                 } else if (steps > gameState.targetSteps) {
                     // Completed but with extra steps
                     gameState.gameCompleted = true;
@@ -783,6 +821,28 @@
                 gameState.gameCompleted = true;
                 showGameResult(false, `Too many steps! Try to return to ${gameState.startingArticle} in ${gameState.targetSteps} steps.`);
             }
+        }
+        
+        // Show completion modal
+        function showCompletionModal(level, steps, points) {
+            const modal = document.getElementById('completion-modal');
+            const title = document.getElementById('completion-title');
+            const message = document.getElementById('completion-message');
+            const scoreDetails = document.getElementById('score-details');
+            const nextLevelInfo = document.getElementById('next-level-info');
+            
+            title.textContent = `Level ${level} Complete!`;
+            message.textContent = `Perfect! You completed the loop in exactly ${steps} steps!`;
+            scoreDetails.textContent = `+${points} points earned (Total: ${gameState.globalScore})`;
+            nextLevelInfo.textContent = `Loading Level ${level + 1}...`;
+            
+            modal.style.display = 'block';
+            
+            // Auto-close and proceed to next level after 3 seconds
+            setTimeout(() => {
+                modal.style.display = 'none';
+                nextLevel();
+            }, 3000);
         }
         
         // Show game result
