@@ -522,7 +522,6 @@ function displayArticle(title, html) {
         
         // Convert Wikipedia links to custom clickable spans within iframe
         const links = iframeDoc.querySelectorAll('a');
-        console.log('Found links:', links.length);
         
         links.forEach((link, index) => {
             const href = link.getAttribute('href');
@@ -614,7 +613,6 @@ function displayArticle(title, html) {
                 link.parentNode.replaceChild(span, link);
             } else {
                 // For non-Wikipedia links, disable them
-                console.log('Non-Wikipedia link, disabling:', link.textContent);
                 link.style.cssText = 'color: #666; cursor: default;';
                 link.title = 'External link disabled';
                 link.addEventListener('click', (e) => {
@@ -638,39 +636,6 @@ function displayArticle(title, html) {
             }
         }, 250);
     };
-}
-
-// Global click handler for wiki links using event delegation
-document.addEventListener('click', function(e) {
-    const target = e.target.closest('.wiki-link');
-    if (target && target.dataset.articleTitle) {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const articleTitle = target.dataset.articleTitle;
-        console.log('Global click handler - Wiki link clicked:', articleTitle);
-        console.log('Navigation from:', currentArticle, 'to:', articleTitle);
-        
-        if (articleTitle && articleTitle.trim() !== '') {
-            fetchWikipediaArticle(articleTitle);
-        }
-    }
-});
-
-// Load a random article on page load
-async function loadRandomArticle() {
-    try {
-        const response = await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary');
-        const data = await response.json();
-        const title = data.title;
-        
-        console.log('Loading random article:', title);
-        fetchWikipediaArticle(title);
-    } catch (error) {
-        console.error('Error loading random article:', error);
-        // Fallback to a known article
-        fetchWikipediaArticle('Wikipedia');
-    }
 }
 
 // Start with a new game
