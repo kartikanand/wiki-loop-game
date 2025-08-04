@@ -1,0 +1,28 @@
+{
+  "name": "wikipedia-loop-game",
+  "version": "1.0.0",
+  "description": "A Wikipedia navigation loop game",
+  "scripts": {
+    "dev": "parcel index.html --open",
+    "build": "parcel build index.html --dist-dir dist --public-url ./",
+    "clean": "rm -rf dist .parcel-cache",
+    "preview": "parcel serve dist/index.html --port 3000",
+    "start": "npm run dev"
+  },
+  "keywords": [
+    "wikipedia",
+    "game",
+    "navigation",
+    "browser",
+    "javascript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "parcel": "^2.10.0"
+  },
+  "browserslist": [
+    "last 2 versions",
+    "> 1%"
+  ]
+}
