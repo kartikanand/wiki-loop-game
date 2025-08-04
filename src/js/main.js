@@ -1,131 +1,8 @@
 import GameState from './GameState.js';
+import ArticleCache from './ArticleCache.js';
 
 let gameState = new GameState();
-
-// Cache management
-const CACHE_KEY = 'wikipedia-loop-game-cache';
-const CACHE_VERSION = '1.0';
-const MAX_CACHE_SIZE = 50; // Maximum number of articles to cache
-let articleCache = new Map();
-let preloadingArticles = new Set(); // Track articles currently being preloaded
-
-// Initialize cache from localStorage
-function initializeCache() {
-    try {
-        const cachedData = localStorage.getItem(CACHE_KEY);
-        if (cachedData) {
-            const parsed = JSON.parse(cachedData);
-            if (parsed.version === CACHE_VERSION) {
-                articleCache = new Map(parsed.articles);
-                console.log(`Loaded ${articleCache.size} articles from cache`);
-            } else {
-                console.log('Cache version mismatch, clearing cache');
-                localStorage.removeItem(CACHE_KEY);
-            }
-        }
-    } catch (error) {
-        console.error('Error loading cache:', error);
-        localStorage.removeItem(CACHE_KEY);
-    }
-}
-
-// Save cache to localStorage
-function saveCache() {
-    try {
-        const cacheData = {
-            version: CACHE_VERSION,
-            articles: Array.from(articleCache.entries()),
-            timestamp: Date.now()
-        };
-        localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-    } catch (error) {
-        console.error('Error saving cache:', error);
-        // If storage is full, clear some old entries
-        if (error.name === 'QuotaExceededError') {
-            clearOldCacheEntries();
-        }
-    }
-}
-
-// Clear old cache entries when storage is full
-function clearOldCacheEntries() {
-    const entries = Array.from(articleCache.entries());
-    // Sort by last accessed time and remove oldest half
-    entries.sort((a, b) => (a[1].lastAccessed || 0) - (b[1].lastAccessed || 0));
-    const toRemove = Math.floor(entries.length / 2);
-    
-    for (let i = 0; i < toRemove; i++) {
-        articleCache.delete(entries[i][0]);
-    }
-    
-    console.log(`Cleared ${toRemove} old cache entries`);
-    saveCache();
-}
-
-// Add article to cache
-function addToCache(title, html, resolvedTitle = null) {
-    // Remove oldest entries if cache is too large
-    if (articleCache.size >= MAX_CACHE_SIZE) {
-        const oldestKey = articleCache.keys().next().value;
-        articleCache.delete(oldestKey);
-    }
-    
-    const cacheData = {
-        html: html,
-        timestamp: Date.now(),
-        lastAccessed: Date.now(),
-        resolvedTitle: resolvedTitle || title
-    };
-    
-    articleCache.set(title, cacheData);
-    
-    // Also cache under resolved title if different
-    if (resolvedTitle && resolvedTitle !== title) {
-        articleCache.set(resolvedTitle, cacheData);
-    }
-    
-    saveCache();
-}
-
-// Get article from cache
-function getFromCache(title) {
-    const cached = articleCache.get(title);
-    if (cached) {
-        // Update last accessed time
-        cached.lastAccessed = Date.now();
-        console.log(`Cache hit for: ${title}${cached.resolvedTitle && cached.resolvedTitle !== title ? ` (resolves to: ${cached.resolvedTitle})` : ''}`);
-        return {
-            html: cached.html,
-            resolvedTitle: cached.resolvedTitle || title
-        };
-    }
-    console.log(`Cache miss for: ${title}`);
-    return null;
-}
-
-// Preload article in background
-async function preloadArticle(title) {
-    // Don't preload if already cached or currently preloading
-    if (articleCache.has(title) || preloadingArticles.has(title)) {
-        return;
-    }
-    
-    preloadingArticles.add(title);
-    console.log(`Preloading article: ${title}`);
-    
-    try {
-        const response = await fetch(`https://en.wikipedia.org/w/rest.php/v1/page/${encodeURIComponent(title)}/html`);
-        if (response.ok) {
-            const html = await response.text();
-            addToCache(title, html);
-            console.log(`Preloaded and cached: ${title}`);
-        }
-    } catch (error) {
-        console.error(`Error preloading ${title}:`, error);
-    } finally {
-        preloadingArticles.delete(title);
-    }
-}
+let articleCache = new ArticleCache();
 
 // List of starting articles for the game
 const startingArticles = [
@@ -367,7 +244,7 @@ async function fetchWikipediaArticle(title, addToPath = true) {
         console.log('Fetching article:', title);
         
         // Check cache first
-        let cacheResult = getFromCache(title);
+        let cacheResult = articleCache.get(title);
         let html = cacheResult ? cacheResult.html : null;
         let resolvedTitle = cacheResult ? cacheResult.resolvedTitle : title;
         
@@ -407,7 +284,7 @@ async function fetchWikipediaArticle(title, addToPath = true) {
             console.log('Article fetched from API:', title, '-> resolved to:', resolvedTitle);
 
             // Add to cache with resolved title
-            addToCache(title, html, resolvedTitle);
+            articleCache.add(title, html, resolvedTitle);
             console.log('Article fetched from API and cached');
         } else {
             console.log('Article loaded from cache');
@@ -531,7 +408,7 @@ function displayArticle(title, html) {
                     span.style.textDecoration = 'underline';
                     setTimeout(() => {
                         if (span.matches(':hover')) {
-                            preloadArticle(articleTitle);
+                            articleCache.preload(articleTitle);
                         }
                     }, 200);
                 });
@@ -603,5 +480,4 @@ function displayArticle(title, html) {
 }
 
 // Start with a new game
-initializeCache(); // Initialize cache before starting the game
 initializeGame();
