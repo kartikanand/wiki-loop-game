@@ -90,25 +90,21 @@ function updateGameDisplay() {
 
 // Check if player has completed the level
 function checkGameCompletion() {
-    if (!gameState.gameStarted || gameState.gameCompleted) return;
+    const result = gameState.checkCompletion();
     
-    const steps = gameState.getCurrentSteps();
-    
-    // Check if player returned to starting article
-    if (gameState.currentArticle === gameState.startingArticle && steps > 0) {
-        if (steps === gameState.targetSteps) {
-            // Perfect completion!
-            gameState.completeLevel();
-            showCompletionModal(gameState.level, steps, gameState.currentLevelScore);
-        } else if (steps > gameState.targetSteps) {
-            // Completed but with extra steps
-            gameState.gameCompleted = true;
-            showGameResult(false, `You returned to ${gameState.startingArticle} but took ${steps} steps instead of ${gameState.targetSteps}. Try again!`);
-        }
-    } else if (steps >= gameState.targetSteps * 2) {
-        // Too many steps without returning
-        gameState.gameCompleted = true;
-        showGameResult(false, `Too many steps! Try to return to ${gameState.startingArticle} in ${gameState.targetSteps} steps.`);
+    switch (result.status) {
+        case 'perfect':
+            showCompletionModal(result.level, result.steps, result.score);
+            break;
+        case 'imperfect':
+        case 'failed':
+            showGameResult(false, result.message);
+            break;
+        case 'ongoing':
+        case 'none':
+        default:
+            // No action needed
+            break;
     }
 }
 

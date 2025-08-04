@@ -105,6 +105,46 @@ export default class GameState {
         return null;
     }
 
+    // Check if player has completed the level and return completion status
+    checkCompletion() {
+        if (!this.gameStarted || this.gameCompleted) {
+            return { status: 'none' };
+        }
+        
+        const steps = this.getCurrentSteps();
+        
+        // Check if player returned to starting article
+        if (this.currentArticle === this.startingArticle && steps > 0) {
+            if (steps === this.targetSteps) {
+                // Perfect completion!
+                this.completeLevel();
+                return {
+                    status: 'perfect',
+                    level: this.level,
+                    steps: steps,
+                    score: this.currentLevelScore,
+                    globalScore: this.globalScore
+                };
+            } else if (steps > this.targetSteps) {
+                // Completed but with extra steps
+                this.gameCompleted = true;
+                return {
+                    status: 'imperfect',
+                    message: `You returned to ${this.startingArticle} but took ${steps} steps instead of ${this.targetSteps}. Try again!`
+                };
+            }
+        } else if (steps >= this.targetSteps * 2) {
+            // Too many steps without returning
+            this.gameCompleted = true;
+            return {
+                status: 'failed',
+                message: `Too many steps! Try to return to ${this.startingArticle} in ${this.targetSteps} steps.`
+            };
+        }
+        
+        return { status: 'ongoing' };
+    }
+
     // Get current step count (excluding starting article)
     getCurrentSteps() {
         return this.navigationPath.length > 0 ? this.navigationPath.length - 1 : 0;
