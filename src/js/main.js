@@ -190,85 +190,114 @@ function updateNavigationDisplay() {
   gameUI.updateNavigationDisplay(gameState);
 }
 
-// Fetch Wikipedia article content
+// Extract resolved title from Wikipedia API response
+function extractResolvedTitle(response, html, originalTitle) {
+  let resolvedTitle = originalTitle;
+
+  // Extract title from the final URL after redirects
+  const finalUrl = response.url;
+  if (finalUrl && finalUrl.includes("/page/")) {
+    const urlParts = finalUrl.split("/page/");
+    if (urlParts.length > 1) {
+      resolvedTitle = decodeURIComponent(urlParts[1].split("/")[0]).replace(
+        /_/g,
+        " "
+      );
+    }
+  }
+
+  // Also try to extract title from HTML content
+  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  if (titleMatch && titleMatch[1]) {
+    const htmlTitle = titleMatch[1].replace(/ - Wikipedia$/, "").trim();
+    if (htmlTitle && htmlTitle !== "Wikipedia") {
+      resolvedTitle = htmlTitle;
+    }
+  }
+
+  return resolvedTitle;
+}
+
+// Fetch article HTML from Wikipedia API
+async function fetchArticleFromAPI(title) {
+  const response = await fetch(
+    `https://en.wikipedia.org/w/rest.php/v1/page/${encodeURIComponent(
+      title
+    )}/html`
+  );
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      alert(`Article "${title}" not found. Try clicking on a different link.`);
+      return null;
+    }
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const html = await response.text();
+  const resolvedTitle = extractResolvedTitle(response, html, title);
+
+  return { html, resolvedTitle };
+}
+
+// Get article content (from cache or API)
+async function getArticleContent(title) {
+  console.log("Fetching article:", title);
+
+  // Check cache first
+  const cacheResult = articleCache.get(title);
+  if (cacheResult) {
+    console.log("Article loaded from cache");
+    return {
+      html: cacheResult.html,
+      resolvedTitle: cacheResult.resolvedTitle,
+    };
+  }
+
+  // Not in cache, fetch from API
+  const apiResult = await fetchArticleFromAPI(title);
+  if (!apiResult) return null; // Article not found
+
+  const { html, resolvedTitle } = apiResult;
+
+  console.log(
+    "Article fetched from API:",
+    title,
+    "-> resolved to:",
+    resolvedTitle
+  );
+
+  // Add to cache with resolved title
+  articleCache.add(title, html, resolvedTitle);
+  console.log("Article fetched from API and cached");
+
+  return { html, resolvedTitle };
+}
+
+// Display article and update game state
+function displayArticleAndUpdateState(resolvedTitle, html, addToPath) {
+  articleDisplay.displayArticle(resolvedTitle, html);
+  gameState.setCurrentArticle(resolvedTitle);
+
+  // Add to navigation path if this is a new navigation
+  if (addToPath) {
+    addToNavigationPath(resolvedTitle);
+  } else {
+    // If not adding to path (navigating back), still update the display
+    updateNavigationDisplay();
+  }
+}
+
+// Main function to fetch and display Wikipedia article
 async function fetchWikipediaArticle(title, addToPath = true) {
   try {
-    console.log("Fetching article:", title);
+    const articleContent = await getArticleContent(title);
+    if (!articleContent) return; // Article not found, already handled
 
-    // Check cache first
-    let cacheResult = articleCache.get(title);
-    let html = cacheResult ? cacheResult.html : null;
-    let resolvedTitle = cacheResult ? cacheResult.resolvedTitle : title;
-
-    if (!html) {
-      // Not in cache, fetch from API
-      const response = await fetch(
-        `https://en.wikipedia.org/w/rest.php/v1/page/${encodeURIComponent(
-          title
-        )}/html`
-      );
-      if (!response.ok) {
-        // Show alert for missing articles instead of navigating
-        if (response.status === 404) {
-          alert(
-            `Article "${title}" not found. Try clicking on a different link.`
-          );
-          return;
-        }
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      html = await response.text();
-
-      // Extract the actual resolved title from the response headers or HTML
-      const finalUrl = response.url;
-      if (finalUrl && finalUrl.includes("/page/")) {
-        // Extract title from the final URL after redirects
-        const urlParts = finalUrl.split("/page/");
-        if (urlParts.length > 1) {
-          resolvedTitle = decodeURIComponent(urlParts[1].split("/")[0]).replace(
-            /_/g,
-            " "
-          );
-        }
-      }
-
-      // Also try to extract title from HTML content
-      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      if (titleMatch && titleMatch[1]) {
-        const htmlTitle = titleMatch[1].replace(/ - Wikipedia$/, "").trim();
-        if (htmlTitle && htmlTitle !== "Wikipedia") {
-          resolvedTitle = htmlTitle;
-        }
-      }
-
-      console.log(
-        "Article fetched from API:",
-        title,
-        "-> resolved to:",
-        resolvedTitle
-      );
-
-      // Add to cache with resolved title
-      articleCache.add(title, html, resolvedTitle);
-      console.log("Article fetched from API and cached");
-    } else {
-      console.log("Article loaded from cache");
-    }
-
-    articleDisplay.displayArticle(resolvedTitle, html);
-    gameState.setCurrentArticle(resolvedTitle); // Use resolved title as current article
-
-    // Add to navigation path if this is a new navigation
-    if (addToPath) {
-      addToNavigationPath(resolvedTitle); // Use resolved title in navigation
-    } else {
-      // If not adding to path (navigating back), still update the display
-      updateNavigationDisplay();
-    }
+    const { html, resolvedTitle } = articleContent;
+    displayArticleAndUpdateState(resolvedTitle, html, addToPath);
   } catch (error) {
     console.error("Error fetching article:", error);
-    // Show alert instead of replacing content with error message
     alert(
       `Failed to load article "${title}". Please try again or click on a different link.`
     );
