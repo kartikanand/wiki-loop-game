@@ -1,9 +1,18 @@
 import GameState from './GameState.js';
 import ArticleCache from './ArticleCache.js';
 import ArticleDisplay from './ArticleDisplay.js';
+import GameUI from './GameUI.js';
 
 let gameState = new GameState();
 let articleCache = new ArticleCache();
+
+// Initialize game UI with callbacks
+let gameUI = new GameUI({
+    onNewGame: initializeGame,
+    onResetLevel: resetLevel,
+    onNextLevel: nextLevel,
+    onNavigateBack: handleNavigateBack
+});
 
 // Initialize article display with callbacks
 let articleDisplay = new ArticleDisplay('wiki-content', {
@@ -76,15 +85,7 @@ function initializeGame() {
 
 // Update game display elements
 function updateGameDisplay() {
-    document.getElementById('current-level').textContent = gameState.level;
-    document.getElementById('target-steps').textContent = gameState.targetSteps;
-    document.getElementById('steps-taken').textContent = gameState.getCurrentSteps();
-    document.getElementById('target-article').textContent = gameState.startingArticle;
-    document.getElementById('global-score').textContent = gameState.globalScore;
-    document.getElementById('level-score').textContent = gameState.currentLevelScore;
-    
-    // Hide game result
-    document.getElementById('game-result').classList.add('hidden');
+    gameUI.updateGameDisplay(gameState);
 }
 
 // Check if player has completed the level
@@ -113,60 +114,17 @@ function checkGameCompletion() {
 
 // Show completion modal
 function showCompletionModal(level, steps, points) {
-    const modal = document.getElementById('completion-modal');
-    const title = document.getElementById('completion-title');
-    const message = document.getElementById('completion-message');
-    const scoreDetails = document.getElementById('score-details');
-    const nextLevelInfo = document.getElementById('next-level-info');
-    
-    title.textContent = `Level ${level} Complete!`;
-    message.textContent = `Perfect! You completed the loop in exactly ${steps} steps!`;
-    scoreDetails.textContent = `+${points} points earned (Total: ${gameState.globalScore})`;
-    nextLevelInfo.textContent = `Loading Level ${level + 1}...`;
-    
-    modal.style.display = 'block';
-    
-    // Auto-close and proceed to next level after 3 seconds
-    setTimeout(() => {
-        modal.style.display = 'none';
-        nextLevel();
-    }, 3000);
+    gameUI.showCompletionModal(level, steps, points, gameState.globalScore);
 }
 
 // Show game result
 function showGameResult(success, message) {
-    const resultDiv = document.getElementById('game-result');
-    resultDiv.textContent = message;
-    resultDiv.classList.remove('hidden');
-    if (success) {
-        resultDiv.classList.remove('failure');
-    } else {
-        resultDiv.classList.add('failure');
-    }
+    gameUI.showGameResult(success, message);
 }
 
 // Show temporary message (for penalties, bonuses, etc.)
 function showTemporaryMessage(message, type = 'info', duration = 2000) {
-    const resultDiv = document.getElementById('game-result');
-    const originalContent = resultDiv.textContent;
-    const wasHidden = resultDiv.classList.contains('hidden');
-    
-    resultDiv.textContent = message;
-    resultDiv.classList.remove('hidden');
-    
-    if (type === 'penalty') {
-        resultDiv.classList.add('failure');
-    } else {
-        resultDiv.classList.remove('failure');
-    }
-    
-    setTimeout(() => {
-        if (wasHidden) {
-            resultDiv.classList.add('hidden');
-        } else {
-            resultDiv.textContent = originalContent;
-        }
-    }, duration);
+    gameUI.showTemporaryMessage(message, type, duration);
 }
 
 // Move to next level
@@ -189,35 +147,27 @@ function resetLevel() {
 }
 
 // Add event listeners for game buttons
-document.getElementById('new-game-btn').addEventListener('click', initializeGame);
-document.getElementById('reset-level-btn').addEventListener('click', resetLevel);
+// (These are now handled by GameUI class)
 
-// Help modal functionality
-const helpModal = document.getElementById('help-modal');
-const helpBtn = document.getElementById('help-btn');
-const closeModal = document.getElementById('close-modal');
-
-helpBtn.addEventListener('click', () => {
-    helpModal.style.display = 'block';
-});
-
-closeModal.addEventListener('click', () => {
-    helpModal.style.display = 'none';
-});
-
-// Close modal when clicking outside of it
-window.addEventListener('click', (event) => {
-    if (event.target === helpModal) {
-        helpModal.style.display = 'none';
+// Handle navigate back callback from GameUI
+function handleNavigateBack(index, article) {
+    // Allow clicking on any article except current
+    if (index !== gameState.navigationPath.length - 1) {
+        // Apply penalty for backtracking if game has started
+        if (gameState.gameStarted && !gameState.gameCompleted) {
+            const result = gameState.navigateBack(index);
+            if (result) {
+                updateGameDisplay();
+                
+                // Show penalty message briefly
+                showTemporaryMessage(`-${result.penalty} points for going back ${result.stepsBack} step(s)`, 'penalty');
+            }
+        }
+        
+        // Navigate to the article
+        fetchWikipediaArticle(article, false); // false = don't add to path
     }
-});
-
-// Close modal with Escape key
-document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && helpModal.style.display === 'block') {
-        helpModal.style.display = 'none';
-    }
-});
+}
 
 // Add article to navigation path
 function addToNavigationPath(articleTitle) {
@@ -232,43 +182,7 @@ function addToNavigationPath(articleTitle) {
 
 // Update the navigation path display in sidebar
 function updateNavigationDisplay() {
-    const pathContainer = document.getElementById('navigation-path');
-    pathContainer.innerHTML = '';
-    
-    gameState.navigationPath.forEach((article, index) => {
-        const li = document.createElement('li');
-        li.innerHTML = `
-            <span class="step-number">${index + 1}.</span>
-            ${article}
-        `;
-        
-        // Mark current article
-        if (index === gameState.navigationPath.length - 1) {
-            li.classList.add('current');
-        }
-        
-        // Add click handler to navigate back to previous articles
-        li.addEventListener('click', async () => {
-            // Allow clicking on any article
-            if (index !== gameState.navigationPath.length - 1) {
-                // Apply penalty for backtracking if game has started
-                if (gameState.gameStarted && !gameState.gameCompleted) {
-                    const result = gameState.navigateBack(index);
-                    if (result) {
-                        updateGameDisplay();
-                        
-                        // Show penalty message briefly
-                        showTemporaryMessage(`-${result.penalty} points for going back ${result.stepsBack} step(s)`, 'penalty');
-                    }
-                }
-                
-                // Navigate to the article
-                await fetchWikipediaArticle(article, false); // false = don't add to path
-            }
-        });
-        
-        pathContainer.appendChild(li);
-    });
+    gameUI.updateNavigationDisplay(gameState);
 }
 
 // Fetch Wikipedia article content
