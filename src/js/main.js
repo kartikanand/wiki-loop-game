@@ -1,15 +1,6 @@
-let currentArticle = '';
-let navigationPath = [];
-let gameState = {
-    level: 1,
-    targetSteps: 2,
-    startingArticle: '',
-    gameStarted: false,
-    gameCompleted: false,
-    globalScore: 0,
-    currentLevelScore: 100,
-    backtrackPenalty: 10
-};
+import GameState from './GameState.js';
+
+let gameState = new GameState();
 
 // Cache management
 const CACHE_KEY = 'wikipedia-loop-game-cache';
@@ -162,18 +153,12 @@ const startingArticles = [
 
 // Initialize game
 function initializeGame() {
-    gameState.level = 1;
-    gameState.targetSteps = 2;
-    gameState.gameStarted = false;
-    gameState.gameCompleted = false;
-    gameState.globalScore = 0;
-    gameState.currentLevelScore = 100;
-    navigationPath = [];
+    gameState.initializeGame();
     
     // Choose random starting article
     const randomIndex = Math.floor(Math.random() * startingArticles.length);
-    gameState.startingArticle = startingArticles[randomIndex];
-    // gameState.startingArticle = 'Technology'; // For testing purposes, use a fixed article
+    gameState.setStartingArticle(startingArticles[randomIndex]);
+    // gameState.setStartingArticle('Technology'); // For testing purposes, use a fixed article
     
     updateGameDisplay();
     fetchWikipediaArticle(gameState.startingArticle, true);
@@ -183,7 +168,7 @@ function initializeGame() {
 function updateGameDisplay() {
     document.getElementById('current-level').textContent = gameState.level;
     document.getElementById('target-steps').textContent = gameState.targetSteps;
-    document.getElementById('steps-taken').textContent = navigationPath.length > 0 ? navigationPath.length - 1 : 0;
+    document.getElementById('steps-taken').textContent = gameState.getCurrentSteps();
     document.getElementById('target-article').textContent = gameState.startingArticle;
     document.getElementById('global-score').textContent = gameState.globalScore;
     document.getElementById('level-score').textContent = gameState.currentLevelScore;
@@ -196,14 +181,13 @@ function updateGameDisplay() {
 function checkGameCompletion() {
     if (!gameState.gameStarted || gameState.gameCompleted) return;
     
-    const steps = navigationPath.length - 1; // Don't count starting article
+    const steps = gameState.getCurrentSteps();
     
     // Check if player returned to starting article
-    if (currentArticle === gameState.startingArticle && steps > 0) {
+    if (gameState.currentArticle === gameState.startingArticle && steps > 0) {
         if (steps === gameState.targetSteps) {
             // Perfect completion!
-            gameState.gameCompleted = true;
-            gameState.globalScore += gameState.currentLevelScore;
+            gameState.completeLevel();
             showCompletionModal(gameState.level, steps, gameState.currentLevelScore);
         } else if (steps > gameState.targetSteps) {
             // Completed but with extra steps
@@ -277,16 +261,11 @@ function showTemporaryMessage(message, type = 'info', duration = 2000) {
 
 // Move to next level
 function nextLevel() {
-    gameState.level++;
-    gameState.targetSteps = gameState.level * 2;
-    gameState.gameCompleted = false;
-    gameState.gameStarted = false;
-    gameState.currentLevelScore = 100; // Reset level score for new level
-    navigationPath = [];
+    gameState.nextLevel();
     
     // Choose new starting article
     const randomIndex = Math.floor(Math.random() * startingArticles.length);
-    gameState.startingArticle = startingArticles[randomIndex];
+    gameState.setStartingArticle(startingArticles[randomIndex]);
     
     updateGameDisplay();
     fetchWikipediaArticle(gameState.startingArticle, true);
@@ -294,10 +273,7 @@ function nextLevel() {
 
 // Reset current level
 function resetLevel() {
-    gameState.gameCompleted = false;
-    gameState.gameStarted = false;
-    gameState.currentLevelScore = 100; // Reset level score when resetting level
-    navigationPath = [];
+    gameState.resetLevel();
     updateGameDisplay();
     fetchWikipediaArticle(gameState.startingArticle, true);
 }
@@ -335,23 +311,13 @@ document.addEventListener('keydown', (event) => {
 
 // Add article to navigation path
 function addToNavigationPath(articleTitle) {
-    // Don't add the same article consecutively
-    if (navigationPath.length > 0 && navigationPath[navigationPath.length - 1] === articleTitle) {
-        console.log('Skipping duplicate consecutive article:', articleTitle);
-        return;
+    if (gameState.addToNavigationPath(articleTitle)) {
+        updateNavigationDisplay();
+        updateGameDisplay();
+        
+        // Check for game completion
+        checkGameCompletion();
     }
-    
-    navigationPath.push(articleTitle);
-    updateNavigationDisplay();
-    updateGameDisplay();
-    
-    // Mark game as started after first move
-    if (navigationPath.length > 1) {
-        gameState.gameStarted = true;
-    }
-    
-    // Check for game completion
-    checkGameCompletion();
 }
 
 // Update the navigation path display in sidebar
@@ -359,7 +325,7 @@ function updateNavigationDisplay() {
     const pathContainer = document.getElementById('navigation-path');
     pathContainer.innerHTML = '';
     
-    navigationPath.forEach((article, index) => {
+    gameState.navigationPath.forEach((article, index) => {
         const li = document.createElement('li');
         li.innerHTML = `
             <span class="step-number">${index + 1}.</span>
@@ -367,28 +333,26 @@ function updateNavigationDisplay() {
         `;
         
         // Mark current article
-        if (index === navigationPath.length - 1) {
+        if (index === gameState.navigationPath.length - 1) {
             li.classList.add('current');
         }
         
         // Add click handler to navigate back to previous articles
         li.addEventListener('click', async () => {
             // Allow clicking on any article
-            if (index !== navigationPath.length - 1) {
+            if (index !== gameState.navigationPath.length - 1) {
                 // Apply penalty for backtracking if game has started
                 if (gameState.gameStarted && !gameState.gameCompleted) {
-                    const stepsBack = navigationPath.length - 1 - index;
-                    const penalty = stepsBack * gameState.backtrackPenalty;
-                    gameState.currentLevelScore = Math.max(0, gameState.currentLevelScore - penalty);
-                    updateGameDisplay();
-                    
-                    // Show penalty message briefly
-                    showTemporaryMessage(`-${penalty} points for going back ${stepsBack} step(s)`, 'penalty');
+                    const result = gameState.navigateBack(index);
+                    if (result) {
+                        updateGameDisplay();
+                        
+                        // Show penalty message briefly
+                        showTemporaryMessage(`-${result.penalty} points for going back ${result.stepsBack} step(s)`, 'penalty');
+                    }
                 }
                 
-                // Only trim path and navigate if it's not the current article
-                navigationPath = navigationPath.slice(0, index + 1);
-                currentArticle = article;
+                // Navigate to the article
                 await fetchWikipediaArticle(article, false); // false = don't add to path
             }
         });
@@ -450,7 +414,7 @@ async function fetchWikipediaArticle(title, addToPath = true) {
         }
         
         displayArticle(resolvedTitle, html);
-        currentArticle = resolvedTitle; // Use resolved title as current article
+        gameState.setCurrentArticle(resolvedTitle); // Use resolved title as current article
         
         // Add to navigation path if this is a new navigation
         if (addToPath) {
@@ -584,10 +548,10 @@ function displayArticle(title, html) {
                     
                     if (articleTitle && articleTitle.trim() !== '') {
                         // Check if this article is already in the navigation path
-                        if (navigationPath.includes(articleTitle)) {
+                        if (gameState.navigationPath.includes(articleTitle)) {
                             // If it's the starting article, check if we can complete the loop
                             if (articleTitle === gameState.startingArticle) {
-                                const currentSteps = navigationPath.length - 1; // Don't count starting article
+                                const currentSteps = gameState.getCurrentSteps();
                                 const nextStepCount = currentSteps + 1; // This would be the step count after navigation
                                 
                                 if (nextStepCount === gameState.targetSteps) {
