@@ -1,8 +1,41 @@
 import GameState from './GameState.js';
 import ArticleCache from './ArticleCache.js';
+import ArticleDisplay from './ArticleDisplay.js';
 
 let gameState = new GameState();
 let articleCache = new ArticleCache();
+
+// Initialize article display with callbacks
+let articleDisplay = new ArticleDisplay('wiki-content', {
+    onLinkHover: (articleTitle) => {
+        articleCache.preload(articleTitle);
+    },
+    onLinkClick: (articleTitle) => {
+        // Check if this article is already in the navigation path
+        if (gameState.navigationPath.includes(articleTitle)) {
+            // If it's the starting article, check if we can complete the loop
+            if (articleTitle === gameState.startingArticle) {
+                const currentSteps = gameState.getCurrentSteps();
+                const nextStepCount = currentSteps + 1; // This would be the step count after navigation
+                
+                if (nextStepCount === gameState.targetSteps) {
+                    // Valid loop completion - taking the Nth step to return to start
+                    fetchWikipediaArticle(articleTitle);
+                } else if (nextStepCount < gameState.targetSteps) {
+                    alert(`You need to take exactly ${gameState.targetSteps} steps before returning to ${articleTitle}. This would be step ${nextStepCount} of ${gameState.targetSteps}.`);
+                } else {
+                    alert(`You've taken too many steps. This would be step ${nextStepCount} but you needed exactly ${gameState.targetSteps} steps.`);
+                }
+            } else {
+                // Trying to visit an intermediate article already in path
+                alert(`You've already visited "${articleTitle}". You can only return to the starting article to complete the loop!`);
+            }
+        } else {
+            // Article not in path, allow navigation
+            fetchWikipediaArticle(articleTitle);
+        }
+    }
+});
 
 // List of starting articles for the game
 const startingArticles = [
@@ -290,7 +323,7 @@ async function fetchWikipediaArticle(title, addToPath = true) {
             console.log('Article loaded from cache');
         }
         
-        displayArticle(resolvedTitle, html);
+        articleDisplay.displayArticle(resolvedTitle, html);
         gameState.setCurrentArticle(resolvedTitle); // Use resolved title as current article
         
         // Add to navigation path if this is a new navigation
@@ -305,178 +338,6 @@ async function fetchWikipediaArticle(title, addToPath = true) {
         // Show alert instead of replacing content with error message
         alert(`Failed to load article "${title}". Please try again or click on a different link.`);
     }
-}
-
-// Display article content using iframe for complete isolation
-function displayArticle(title, html) {
-    const container = document.getElementById('wiki-content');
-    
-    // Clear previous content and remove loading class
-    container.innerHTML = '';
-    container.className = '';
-    container.style.cssText = 'display: flex; flex-direction: column; flex: 1; overflow: hidden;';
-    
-    // Create title outside iframe
-    const titleElement = document.createElement('h1');
-    titleElement.className = 'wiki-title';
-    titleElement.textContent = title;
-    container.appendChild(titleElement);
-    
-    // Create iframe for Wikipedia content
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'width: 100%; flex: 1; border: none; background: white;';
-    iframe.sandbox = 'allow-same-origin allow-scripts';
-    container.appendChild(iframe);
-    
-    // Write the Wikipedia HTML directly to the iframe
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-    iframeDoc.open();
-    iframeDoc.write(html);
-    iframeDoc.close();
-    
-    // Wait for iframe to load then process links and scroll
-    iframe.onload = () => {
-        // Scroll to top of both the main content area and the iframe content
-        const mainContent = document.querySelector('.main-content');
-        mainContent.scrollTop = 0;
-        
-        // Also scroll the iframe content to top
-        if (iframeDoc.documentElement) {
-            iframeDoc.documentElement.scrollTop = 0;
-            iframeDoc.body.scrollTop = 0;
-        }
-        
-        // Additional scroll after a brief delay to ensure content is fully rendered
-        setTimeout(() => {
-            mainContent.scrollTop = 0;
-            if (iframeDoc.documentElement) {
-                iframeDoc.documentElement.scrollTop = 0;
-                iframeDoc.body.scrollTop = 0;
-                // Also try scrolling the window within the iframe
-                try {
-                    iframe.contentWindow.scrollTo(0, 0);
-                } catch (e) {
-                    console.log('Could not scroll iframe window:', e);
-                }
-            }
-        }, 100);
-        
-        // Convert Wikipedia links to custom clickable spans within iframe
-        const links = iframeDoc.querySelectorAll('a');
-        
-        links.forEach((link, index) => {
-            const href = link.getAttribute('href');
-            const rel = link.getAttribute('rel');
-            const title = link.getAttribute('title');
-            
-            // Check if it's a Wikipedia link
-            if ((rel && rel.includes('mw:WikiLink')) || 
-                (href && (
-                    href.startsWith('/wiki/') || 
-                    href.includes('wikipedia.org/wiki/') ||
-                    href.includes('en.wikipedia.org/wiki/')
-                ))) {
-                
-                // Extract article title from different sources
-                let articleTitle = '';
-                
-                if (href && href.startsWith('/wiki/')) {
-                    articleTitle = href.replace('/wiki/', '');
-                } else if (href && href.includes('/wiki/')) {
-                    articleTitle = href.split('/wiki/')[1];
-                } else if (title) {
-                    articleTitle = title;
-                } else if (rel && rel.includes('mw:WikiLink')) {
-                    articleTitle = link.textContent.trim();
-                }
-                
-                // Clean up the title
-                articleTitle = decodeURIComponent(articleTitle)
-                    .replace(/_/g, ' ')
-                    .split('#')[0];
-                
-                // Create a custom clickable span
-                const span = iframeDoc.createElement('span');
-                span.innerHTML = link.innerHTML;
-                span.className = 'wiki-link';
-                span.style.cssText = 'color: #0645ad; cursor: pointer; text-decoration: none;';
-                span.title = `Navigate to: ${articleTitle}`;
-                span.dataset.articleTitle = articleTitle;
-                
-                // Add hover effect and preloading
-                span.addEventListener('mouseenter', () => {
-                    span.style.textDecoration = 'underline';
-                    setTimeout(() => {
-                        if (span.matches(':hover')) {
-                            articleCache.preload(articleTitle);
-                        }
-                    }, 200);
-                });
-                span.addEventListener('mouseleave', () => {
-                    span.style.textDecoration = 'none';
-                });
-                
-                // Add click handler
-                span.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    console.log('Iframe link clicked:', articleTitle);
-                    
-                    if (articleTitle && articleTitle.trim() !== '') {
-                        // Check if this article is already in the navigation path
-                        if (gameState.navigationPath.includes(articleTitle)) {
-                            // If it's the starting article, check if we can complete the loop
-                            if (articleTitle === gameState.startingArticle) {
-                                const currentSteps = gameState.getCurrentSteps();
-                                const nextStepCount = currentSteps + 1; // This would be the step count after navigation
-                                
-                                if (nextStepCount === gameState.targetSteps) {
-                                    // Valid loop completion - taking the Nth step to return to start
-                                    fetchWikipediaArticle(articleTitle);
-                                } else if (nextStepCount < gameState.targetSteps) {
-                                    alert(`You need to take exactly ${gameState.targetSteps} steps before returning to ${articleTitle}. This would be step ${nextStepCount} of ${gameState.targetSteps}.`);
-                                } else {
-                                    alert(`You've taken too many steps. This would be step ${nextStepCount} but you needed exactly ${gameState.targetSteps} steps.`);
-                                }
-                            } else {
-                                // Trying to visit an intermediate article already in path
-                                alert(`You've already visited "${articleTitle}". You can only return to the starting article to complete the loop!`);
-                            }
-                        } else {
-                            // Article not in path, allow navigation
-                            fetchWikipediaArticle(articleTitle);
-                        }
-                    }
-                });
-                
-                // Replace the original link
-                link.parentNode.replaceChild(span, link);
-            } else {
-                // For non-Wikipedia links, disable them
-                link.style.cssText = 'color: #666; cursor: default;';
-                link.title = 'External link disabled';
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                });
-            }
-        });
-        
-        // Final scroll attempt after all links are processed
-        setTimeout(() => {
-            const mainContent = document.querySelector('.main-content');
-            mainContent.scrollTop = 0;
-            if (iframeDoc.documentElement) {
-                iframeDoc.documentElement.scrollTop = 0;
-                iframeDoc.body.scrollTop = 0;
-                try {
-                    iframe.contentWindow.scrollTo(0, 0);
-                } catch (e) {
-                    console.log('Could not scroll iframe window:', e);
-                }
-            }
-        }, 250);
-    };
 }
 
 // Start with a new game
