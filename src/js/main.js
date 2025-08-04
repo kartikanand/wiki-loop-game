@@ -1,11 +1,10 @@
 import GameState from "./GameState.js";
-import ArticleCache from "./ArticleCache.js";
+import ArticleProvider from "./ArticleProvider.js";
 import ArticleDisplay from "./ArticleDisplay.js";
 import GameUI from "./GameUI.js";
-import { extractResolvedTitle, fetchArticleFromAPI } from "./utils.js";
 
 let gameState = new GameState();
-let articleCache = new ArticleCache();
+let articleProvider = new ArticleProvider();
 
 // Initialize game UI with callbacks
 let gameUI = new GameUI({
@@ -18,7 +17,7 @@ let gameUI = new GameUI({
 // Initialize article display with callbacks
 let articleDisplay = new ArticleDisplay("wiki-content", {
   onLinkHover: (articleTitle) => {
-    articleCache.preload(articleTitle);
+    articleProvider.preload(articleTitle);
   },
   onLinkClick: (articleTitle) => {
     // Check if this article is already in the navigation path
@@ -191,40 +190,6 @@ function updateNavigationDisplay() {
   gameUI.updateNavigationDisplay(gameState);
 }
 
-// Get article content (from cache or API)
-async function getArticleContent(title) {
-  console.log("Fetching article:", title);
-
-  // Check cache first
-  const cacheResult = articleCache.get(title);
-  if (cacheResult) {
-    console.log("Article loaded from cache");
-    return {
-      html: cacheResult.html,
-      resolvedTitle: cacheResult.resolvedTitle,
-    };
-  }
-
-  // Not in cache, fetch from API
-  const apiResult = await fetchArticleFromAPI(title);
-  if (!apiResult) return null; // Article not found
-
-  const { html, resolvedTitle } = apiResult;
-
-  console.log(
-    "Article fetched from API:",
-    title,
-    "-> resolved to:",
-    resolvedTitle
-  );
-
-  // Add to cache with resolved title
-  articleCache.add(title, html, resolvedTitle);
-  console.log("Article fetched from API and cached");
-
-  return { html, resolvedTitle };
-}
-
 // Display article and update game state
 function displayArticleAndUpdateState(resolvedTitle, html, addToPath) {
   articleDisplay.displayArticle(resolvedTitle, html);
@@ -242,7 +207,7 @@ function displayArticleAndUpdateState(resolvedTitle, html, addToPath) {
 // Main function to fetch and display Wikipedia article
 async function fetchWikipediaArticle(title, addToPath = true) {
   try {
-    const articleContent = await getArticleContent(title);
+    const articleContent = await articleProvider.getArticleContent(title);
     if (!articleContent) return; // Article not found, already handled
 
     const { html, resolvedTitle } = articleContent;
